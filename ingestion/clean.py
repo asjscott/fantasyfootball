@@ -10,7 +10,11 @@ import numpy as np
 import pandas as pd
 
 # Columns that don't exist in every season. Missing ones are added as NaN.
+# `starts` and the `expected_*` stats were all introduced together in 2022-23
+# (verified against the real per-season CSVs, not assumed) — absent in
+# 2019-20/2020-21/2021-22. `defensive_contribution` is a 2025-26 addition.
 _OPTIONAL_GW_STAT_COLUMNS = {
+    "starts": np.nan,
     "expected_goals": np.nan,
     "expected_assists": np.nan,
     "expected_goal_involvements": np.nan,
@@ -69,13 +73,17 @@ def clean_fixtures(df: pd.DataFrame, season: str) -> pd.DataFrame:
 
 
 def clean_gameweek_stats(df: pd.DataFrame, season: str) -> pd.DataFrame:
-    """Clean `gws/merged_gw.csv`. Note `team`/`opponent_team` here are the
-    season-scoped team name/id, not our internal team_id — resolved at load time.
+    """Clean `gws/merged_gw.csv`. `opponent_team` here is the season-scoped
+    team id, not our internal team_id — resolved at load time. (The file also
+    has a `team` name column for the player's own team, dropped here: it's a
+    season-scoped display name, not a reliable join key, and the player's
+    team is already resolved via `player_seasons` instead — also missing
+    entirely from the 2019-20 file, which is what surfaced this.)
     """
     df = _with_optional_columns(df, _OPTIONAL_GW_STAT_COLUMNS)
 
     columns = [
-        "element", "GW", "fixture", "team", "opponent_team", "was_home", "minutes",
+        "element", "GW", "fixture", "opponent_team", "was_home", "minutes",
         "total_points", "goals_scored", "assists", "clean_sheets", "goals_conceded",
         "own_goals", "penalties_saved", "penalties_missed", "yellow_cards", "red_cards",
         "saves", "bonus", "bps", "influence", "creativity", "threat", "ict_index", "starts",
@@ -87,7 +95,6 @@ def clean_gameweek_stats(df: pd.DataFrame, season: str) -> pd.DataFrame:
         "element": "fpl_season_element_id",
         "GW": "gameweek",
         "fixture": "fpl_season_fixture_id",
-        "team": "team_name",
         "opponent_team": "fpl_season_opponent_team_id",
     })
     out["season"] = season

@@ -68,6 +68,9 @@ type PredictionResponse struct {
 	Gameweek        int32   `json:"gameweek"`
 	PredictedPoints float64 `json:"predicted_points"`
 	ModelVersion    string  `json:"model_version"`
+	// ActualPoints is nil for a gameweek that hasn't been played yet;
+	// populated for backtest/historical gameweeks.
+	ActualPoints *int32 `json:"actual_points"`
 }
 
 func toPredictionResponse(row store.ListPredictionsRow) PredictionResponse {
@@ -80,5 +83,6 @@ func toPredictionResponse(row store.ListPredictionsRow) PredictionResponse {
 		Gameweek:        row.Gameweek,
 		PredictedPoints: numericToFloat64(row.PredictedPoints),
 		ModelVersion:    row.ModelVersion,
+		ActualPoints:    row.ActualPoints,
 	}
 }

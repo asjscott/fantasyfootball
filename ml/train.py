@@ -41,18 +41,22 @@ def _fit_model(train_df: pd.DataFrame, hyperparams: dict) -> lgb.LGBMRegressor:
     return model
 
 
-def walk_forward_validate(
+def walk_forward_predict(
     features_df: pd.DataFrame, holdout_season: str, hyperparams: dict = DEFAULT_HYPERPARAMS,
     min_train_rows: int = 50,
-) -> dict:
-    """Expanding-window validation over every gameweek of `holdout_season`,
-    training only on rows strictly before the gameweek being scored.
+):
+    """Expanding-window walk-forward over every gameweek of `holdout_season`,
+    training fresh each time on rows strictly before the gameweek being
+    scored. Yields (gameweek, test_data, predictions) per gameweek.
+
+    Shared by `walk_forward_validate` (aggregate MAE/RMSE for model
+    selection) and `ml/backtest.py` (persists the actual per-player
+    predictions for a full historical season replay) — same walk-forward
+    discipline, two different uses of the result.
     """
     df = features_df.dropna(subset=[TARGET_COLUMN])
     train_pool = df[df["season"] != holdout_season]
     holdout = df[df["season"] == holdout_season].sort_values("gameweek")
-
-    model_maes, model_rmses, baseline_maes = [], [], []
 
     for gw in sorted(holdout["gameweek"].unique()):
         train_data = pd.concat([train_pool, holdout[holdout["gameweek"] < gw]])
@@ -62,8 +66,17 @@ def walk_forward_validate(
 
         model = _fit_model(train_data, hyperparams)
         preds = model.predict(test_data[FEATURE_COLUMNS])
-        actual = test_data[TARGET_COLUMN]
+        yield gw, test_data, preds
 
+
+def walk_forward_validate(
+    features_df: pd.DataFrame, holdout_season: str, hyperparams: dict = DEFAULT_HYPERPARAMS,
+    min_train_rows: int = 50,
+) -> dict:
+    model_maes, model_rmses, baseline_maes = [], [], []
+
+    for _gw, test_data, preds in walk_forward_predict(features_df, holdout_season, hyperparams, min_train_rows):
+        actual = test_data[TARGET_COLUMN]
         model_maes.append(_mae(actual, preds))
         model_rmses.append(_rmse(actual, preds))
         baseline_maes.append(_mae(actual, predict_baseline(test_data)))

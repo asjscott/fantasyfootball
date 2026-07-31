@@ -33,6 +33,9 @@ export type Prediction = {
   gameweek: number;
   predicted_points: number;
   model_version: string;
+  // null until the gameweek has actually been played (historical/backtest
+  // gameweeks have it; future ones don't).
+  actual_points: number | null;
 };
 
 export type CurrentGameweek = {

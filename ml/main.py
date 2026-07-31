@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 import typer
 
+from ml.backtest import backtest_season
 from ml.config import CURRENT_SEASON
 from ml.data import load_training_frame, record_model_run
 from ml.predict import predict_gameweek
@@ -9,7 +10,16 @@ from ml.train import DEFAULT_HYPERPARAMS, train_and_evaluate
 
 app = typer.Typer(help="FPL points-prediction ML CLI")
 
-DEFAULT_SEASONS = ["2020-21", "2021-22", "2022-23", "2023-24", "2024-25", CURRENT_SEASON]
+# Mirrors ingestion.config.DEFAULT_HISTORICAL_SEASONS, minus 2025-26 (the
+# default backtest target, not a training-only season) plus the live
+# CURRENT_SEASON for the real train/predict commands below.
+DEFAULT_SEASONS = [
+    "2019-20", "2020-21", "2021-22", "2022-23", "2023-24", "2024-25", CURRENT_SEASON,
+]
+DEFAULT_BACKTEST_TARGET_SEASON = "2025-26"
+DEFAULT_BACKTEST_TRAINING_SEASONS = [
+    "2019-20", "2020-21", "2021-22", "2022-23", "2023-24", "2024-25",
+]
 
 
 def _new_model_version() -> str:
@@ -70,6 +80,25 @@ def train_and_predict(
 
     rows = predict_gameweek(season_list, season, gameweek, model_version)
     typer.echo(f"Wrote {len(rows)} predictions for {season} GW{gameweek}")
+
+
+@app.command()
+def backtest(
+    target_season: str = typer.Option(DEFAULT_BACKTEST_TARGET_SEASON),
+    training_seasons: str = typer.Option(
+        ",".join(DEFAULT_BACKTEST_TRAINING_SEASONS), help="Comma-separated seasons strictly before target_season"
+    ),
+) -> None:
+    """Replays target_season gameweek-by-gameweek, writing real predictions
+    to Postgres for every gameweek so predicted-vs-actual can be reviewed.
+    """
+    typer.echo(f"Backtesting {target_season} against training seasons {training_seasons}...")
+    summary = backtest_season(target_season, training_seasons.split(","))
+    for row in summary:
+        typer.echo(f"  GW{row['gameweek']:02d}: {row['players']} players, MAE={row['mae']:.3f}")
+    if summary:
+        overall_mae = sum(r["mae"] * r["players"] for r in summary) / sum(r["players"] for r in summary)
+        typer.echo(f"Backtest complete: {len(summary)} gameweeks, player-weighted MAE={overall_mae:.3f}")
 
 
 if __name__ == "__main__":

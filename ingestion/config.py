@@ -13,14 +13,20 @@ FPL_LIVE_API_BASE = "https://fantasy.premierleague.com/api"
 
 CACHE_DIR = os.environ.get("INGESTION_CACHE_DIR", ".cache")
 
-# Historical seasons to backfill by default. Earlier seasons have thinner
-# ict/expected-stats coverage, so we keep a ~5-6 season floor.
+# Historical seasons to backfill by default. Extended back to 2019-20 (rather
+# than the original 2020-21 floor) so a walk-forward replay of 2025-26 (see
+# ml/backtest.py) has a deep pre-season training base even for its earliest
+# gameweeks. 2025-26 itself is included as full historical data — it's the
+# season being replayed gameweek-by-gameweek, and its own earlier gameweeks
+# feed into training later ones within the same season.
 DEFAULT_HISTORICAL_SEASONS = [
+    "2019-20",
     "2020-21",
     "2021-22",
     "2022-23",
     "2023-24",
     "2024-25",
+    "2025-26",
 ]
 
 CURRENT_SEASON = "2026-27"

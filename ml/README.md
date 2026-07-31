@@ -26,11 +26,25 @@ Predictions are scaled by `chance_of_playing_this_round` (pulled from `player_cu
 - **Retrain unconditionally, every time**, rather than building a "did the data change enough to bother" heuristic. With the data volumes involved (order 100k-150k rows), LightGBM trains in seconds — the complexity of a smarter retrain-or-skip decision isn't worth it yet.
 - **`predictions` is overwritten per (player, season, gameweek)**, not versioned — the API/frontend never has to reason about "which model version is authoritative," there's just one current prediction per gameweek. The `model_version` column on each row still records which model produced it, for debugging.
 
+## The season backtest (`backtest.py`)
+
+Before the live 2026-27 season starts, we wanted to exercise the whole train → predict → API → frontend cycle against a real, complete season rather than trusting it blind. `backtest.py::backtest_season` replays 2025-26 gameweek-by-gameweek: for each gameweek, it trains a fresh model on everything strictly before it (2019-20 through 2024-25, plus 2025-26's own earlier gameweeks) and writes real predictions for that gameweek to Postgres — the same `predictions` table, distinguished by `model_version` values like `backtest-2025-26-gw07`.
+
+This isn't new prediction logic — it reuses `train.py`'s exact walk-forward loop. Originally `walk_forward_validate` computed aggregate MAE/RMSE and threw away the individual predictions; it's now split into `walk_forward_predict` (a generator yielding `(gameweek, test_data, predictions)` per gameweek) and a thin `walk_forward_validate` that consumes it for metrics. `backtest.py` consumes the same generator to persist the actual per-player numbers instead. One walk-forward implementation, two uses — refactored this way specifically to avoid maintaining the loop twice.
+
+Because the target season's real results are already known, this also gives an honest accuracy read: run locally against seven real seasons (2019-20 through 2025-26, ~178,700 rows), the full 2025-26 replay finished in about a minute and came out to a **player-weighted MAE of ~0.98 points/player/gameweek**. Worth understanding *why* GW1 is the worst gameweek (MAE 1.33, versus ~0.9-1.0 for most of the season): every player's rolling-form features are `NaN` at the very start of a season (no prior gameweeks to average), so the model is working with the least information all year. It also can't predict rare one-off explosions (e.g. a defender scoring an unlikely 17-point haul in GW1) — that's expected of an average-seeking regression model, not a bug to fix.
+
+## Judgment calls specific to the backtest
+
+- **`training_seasons` passed to `backtest_season` should be strictly *before* the target season** — the target season itself is appended automatically (its own earlier gameweeks are legitimate training input for its later ones). Passing the target season in both places would just be a no-op since the function de-duplicates it, but the separation exists to make the "prior seasons vs. the season being replayed" distinction explicit in the CLI.
+- **No model files are saved for backtest runs** — 38 gameweeks × a full LightGBM model would be a lot of disk for models nobody needs to reload (unlike the live `train`/`predict` path, where `predict` needs to reload the model `train` just saved). Backtest results only need to persist as `predictions` + `model_runs` rows.
+
 ## Where to look
 
 - `ml/features.py` — the feature list and the leakage-safe rolling logic.
-- `ml/train.py::walk_forward_validate` — how validation actually works, and how the baseline comparison is wired in.
+- `ml/train.py::walk_forward_predict` — the shared walk-forward loop; `walk_forward_validate` and `ml/backtest.py::backtest_season` are both thin wrappers around it.
 - `ml/predict.py::build_predict_frame` — the synthetic-row trick described above.
+- `ml/backtest.py::backtest_season` — the season replay.
 - `ml/tests/test_features.py` — three tests: leakage is excluded, rolling windows don't cross between players, and home/away strength splitting works. Good starting point for understanding the feature shape by example.
 
 ## Running it
@@ -42,6 +56,7 @@ pytest tests/
 python -m ml.main train --holdout-season 2024-25
 python -m ml.main predict --gameweek 1 --model-version <version from train output>
 python -m ml.main train-and-predict --gameweek 1 --holdout-season 2024-25   # what the weekly job runs
+python -m ml.main backtest   # replays 2025-26 gameweek-by-gameweek against Postgres
 ```
 
 Note: LightGBM needs Apple's OpenMP runtime on macOS (`brew install libomp`) — without it, `import lightgbm` fails at the OS level, not a code issue.

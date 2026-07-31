@@ -25,6 +25,10 @@ This still uses `pgx` underneath (sqlc is a code-generation layer, not a differe
 
 **Sharp edge already hit once**: sqlc infers Go types from the SQL, including nullability. The `CurrentGameweek` query originally used `MIN(gameweek)` without a fallback, and sqlc inferred a non-nullable `int32` — but `MIN()` over zero rows returns SQL `NULL`, which would have caused a scan panic for a fully-finished season. Fixed with `COALESCE(MIN(gameweek), 0)` in `sqlc/queries/gameweeks.sql`, with `0` documented as a "no upcoming gameweek" sentinel. Worth remembering: sqlc's nullability inference isn't infallible, especially around aggregates.
 
+## Predicted vs. actual points
+
+`GET /api/v1/predictions` returns an `actual_points` field alongside `predicted_points` (`sqlc/queries/predictions.sql`) — a `LEFT JOIN` to `player_gameweek_stats` on `(player_id, season, gameweek)`. It's `null` for a gameweek that hasn't been played yet (no matching row exists to join against) and populated for any gameweek that has real results — which today means every backtest gameweek from `ml/backtest.py`'s 2025-26 replay. No new column was added to `predictions` itself for this — the actual result already lives in `player_gameweek_stats` from ingestion, so the join reuses it rather than duplicating it.
+
 ## The `{data, error, meta}` envelope
 
 Every endpoint responds with the same shape (`internal/api/response.go`): `data` holds the payload (or `null` on error), `error` is `null` on success or `{code, message}` on failure, `meta` carries extras like `{"total": N}`. One shared `WriteData`/`WriteError` pair of functions is used by every handler, so this can't drift per-endpoint. `/healthz` is the one deliberate exception — it returns a plain `200 ok` text body, since it's a liveness check, not API data.

@@ -13,9 +13,9 @@ Database: PostgreSQL
 
 ## Commands
 - /db: `GOOSE_DRIVER=postgres GOOSE_DBSTRING="$DATABASE_URL" GOOSE_MIGRATION_DIR=migrations goose up` — apply migrations (source of truth for schema)
-- /ingestion: `python -m ingestion.main ingest-historical --season 2024-25` / `ingest-live-snapshot`
+- /ingestion: `python -m ingestion.main ingest-historical --all-seasons` (2019-20 through 2025-26) / `ingest-live-snapshot`
 - /ingestion, /ml: `pytest` to run tests
-- /ml: `python -m ml.main train --holdout-season 2024-25` / `predict` / `train-and-predict`
+- /ml: `python -m ml.main train --holdout-season 2024-25` / `predict` / `train-and-predict` / `backtest` (replays 2025-26 gameweek-by-gameweek against real results)
 - /api: `go run ./cmd/server`, `go build ./...`, `sqlc generate` (after editing sqlc/queries/*.sql or a migration in /db/migrations)
 - /web: `npm run dev`, `npm run build`, `npm run lint`
 

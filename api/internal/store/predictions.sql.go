@@ -14,12 +14,15 @@ import (
 const listPredictions = `-- name: ListPredictions :many
 SELECT
     p.player_id, pl.web_name, t.name AS team, ps.position,
-    p.season, p.gameweek, p.predicted_points, p.model_version
+    p.season, p.gameweek, p.predicted_points, p.model_version,
+    pgs.total_points AS actual_points
 FROM predictions p
 JOIN players pl ON pl.id = p.player_id
 JOIN player_seasons ps ON ps.player_id = p.player_id AND ps.season = p.season
 JOIN team_seasons ts ON ts.id = ps.team_id
 JOIN teams t ON t.id = ts.team_id
+LEFT JOIN player_gameweek_stats pgs
+    ON pgs.player_id = p.player_id AND pgs.season = p.season AND pgs.gameweek = p.gameweek
 WHERE p.season = $1 AND p.gameweek = $2
     AND ($3::text IS NULL OR ps.position = $3)
     AND ($4::text IS NULL OR t.name = $4)
@@ -42,8 +45,12 @@ type ListPredictionsRow struct {
 	Gameweek        int32          `json:"gameweek"`
 	PredictedPoints pgtype.Numeric `json:"predicted_points"`
 	ModelVersion    string         `json:"model_version"`
+	ActualPoints    *int32         `json:"actual_points"`
 }
 
+// actual_points is NULL for a gameweek that hasn't been played yet (no
+// matching player_gameweek_stats row); populated for backtest/historical
+// gameweeks so predicted-vs-actual can be compared directly.
 func (q *Queries) ListPredictions(ctx context.Context, arg ListPredictionsParams) ([]ListPredictionsRow, error) {
 	rows, err := q.db.Query(ctx, listPredictions,
 		arg.Season,
@@ -67,6 +74,7 @@ func (q *Queries) ListPredictions(ctx context.Context, arg ListPredictionsParams
 			&i.Gameweek,
 			&i.PredictedPoints,
 			&i.ModelVersion,
+			&i.ActualPoints,
 		); err != nil {
 			return nil, err
 		}

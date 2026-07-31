@@ -26,6 +26,10 @@ Early versions of these pages built the success-path JSX *inside* the `try` bloc
 
 Next.js 16 introduced a new caching model ("Cache Components", opt-in via `cacheComponents: true` in `next.config.ts` — **not enabled** in this project) built around a `'use cache'` directive. Without opting in, `fetch()` inside a Server Component is simply uncached by default — every request re-fetches from the Go API. That's the right behavior for this project's first version: predictions/fixtures only change weekly, but correctness (always showing the latest DB state) mattered more than shaving latency for a v1. Caching is a reasonable thing to revisit later; see the root plan's "open items" for this exact note.
 
+## Predicted vs. actual points
+
+`PredictionsTable` (`components/PredictionsTable.tsx`) shows two extra columns — "Actual points" and "Difference" — but only when the data actually has them: `hasActuals = predictions.some(p => p.actual_points !== null)`. For a future gameweek (nothing played yet), `actual_points` is `null` for every row and the table just shows predictions, same as before this feature existed. For a backtest/historical gameweek (see `ml/README.md`'s backtest section), every row has a real `actual_points` from the API, and the extra columns appear automatically — nothing page-level had to change, since `app/predictions/page.tsx` already lets you pick any `season`/`gameweek` via the filter form, e.g. `/predictions?season=2025-26&gameweek=1`.
+
 ## Judgment calls worth knowing about
 
 - **`API_BASE_URL` is a server-only env var** (see `.env.example`) — deliberately *not* prefixed `NEXT_PUBLIC_`, so it's only readable in server-side code and never reaches the browser bundle. This is a direct consequence of every fetch happening in a Server Component; a fully client-rendered app would need the public prefix.
