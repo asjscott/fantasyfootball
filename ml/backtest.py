@@ -11,6 +11,7 @@ starts, and to have a concrete accuracy baseline to improve on.
 
 from ml.data import load_training_frame, record_model_run, write_predictions
 from ml.features import build_features
+from ml.metrics import segmented_mae
 from ml.train import DEFAULT_HYPERPARAMS, walk_forward_predict
 
 
@@ -42,12 +43,20 @@ def backtest_season(
         write_predictions(rows, model_version)
 
         actual = test_data["total_points"]
-        mae = float((actual - preds).abs().mean())
+        seg = segmented_mae(actual, preds, test_data["minutes"])
         record_model_run(
             model_version, all_seasons, hyperparams,
-            validation_mae=mae, validation_rmse=float(((actual - preds) ** 2).mean() ** 0.5),
-            notes=f"backtest replay, gameweek {int(gw)}, {len(test_data)} players",
+            validation_mae=seg["mae"], validation_rmse=float(((actual - preds) ** 2).mean() ** 0.5),
+            notes=(
+                f"backtest replay, gameweek {int(gw)}, {len(test_data)} players, "
+                f"played_mae={seg['played_mae']}, played_rows={seg['played_rows']}, "
+                f"unplayed_mae={seg['unplayed_mae']}, unplayed_rows={seg['unplayed_rows']}"
+            ),
         )
-        summary.append({"gameweek": int(gw), "players": len(test_data), "mae": mae})
+        summary.append({
+            "gameweek": int(gw), "players": len(test_data), "mae": seg["mae"],
+            "played_mae": seg["played_mae"], "played_players": seg["played_rows"],
+            "unplayed_mae": seg["unplayed_mae"], "unplayed_players": seg["unplayed_rows"],
+        })
 
     return summary

@@ -13,6 +13,7 @@ import pandas as pd
 from ml.baseline import predict_baseline
 from ml.config import ARTIFACTS_DIR
 from ml.features import CATEGORICAL_COLUMNS, FEATURE_COLUMNS, TARGET_COLUMN, build_features
+from ml.metrics import segmented_mae
 
 DEFAULT_HYPERPARAMS = {
     "n_estimators": 300,
@@ -21,10 +22,6 @@ DEFAULT_HYPERPARAMS = {
     "min_child_samples": 20,
     "random_state": 42,
 }
-
-
-def _mae(actual: pd.Series, predicted: pd.Series) -> float:
-    return float(np.mean(np.abs(actual - predicted)))
 
 
 def _rmse(actual: pd.Series, predicted: pd.Series) -> float:
@@ -73,20 +70,42 @@ def walk_forward_validate(
     features_df: pd.DataFrame, holdout_season: str, hyperparams: dict = DEFAULT_HYPERPARAMS,
     min_train_rows: int = 50,
 ) -> dict:
-    model_maes, model_rmses, baseline_maes = [], [], []
+    model_rmses = []
+    model_segs, baseline_segs = [], []
 
     for _gw, test_data, preds in walk_forward_predict(features_df, holdout_season, hyperparams, min_train_rows):
         actual = test_data[TARGET_COLUMN]
-        model_maes.append(_mae(actual, preds))
+        minutes = test_data["minutes"]
         model_rmses.append(_rmse(actual, preds))
-        baseline_maes.append(_mae(actual, predict_baseline(test_data)))
+        model_segs.append(segmented_mae(actual, preds, minutes))
+        baseline_segs.append(segmented_mae(actual, predict_baseline(test_data), minutes))
+
+    def _avg(segs, key):
+        vals = [s[key] for s in segs if s[key] is not None]
+        return float(np.mean(vals)) if vals else None
+
+    model_mae = _avg(model_segs, "mae")
+    model_played_mae = _avg(model_segs, "played_mae")
+    model_unplayed_mae = _avg(model_segs, "unplayed_mae")
+    baseline_mae = _avg(baseline_segs, "mae")
+    baseline_played_mae = _avg(baseline_segs, "played_mae")
 
     return {
-        "model_mae": float(np.mean(model_maes)) if model_maes else None,
+        "model_mae": model_mae,
         "model_rmse": float(np.mean(model_rmses)) if model_rmses else None,
-        "baseline_mae": float(np.mean(baseline_maes)) if baseline_maes else None,
-        "gameweeks_evaluated": len(model_maes),
-        "beats_baseline": bool(model_maes) and np.mean(model_maes) < np.mean(baseline_maes),
+        "model_played_mae": model_played_mae,
+        "model_unplayed_mae": model_unplayed_mae,
+        "baseline_mae": baseline_mae,
+        "baseline_played_mae": baseline_played_mae,
+        "played_rows": sum(s["played_rows"] for s in model_segs),
+        "unplayed_rows": sum(s["unplayed_rows"] for s in model_segs),
+        "gameweeks_evaluated": len(model_segs),
+        "beats_baseline": bool(model_segs) and model_mae is not None and baseline_mae is not None
+        and model_mae < baseline_mae,
+        "beats_baseline_played": (
+            model_played_mae is not None and baseline_played_mae is not None
+            and model_played_mae < baseline_played_mae
+        ),
     }
 
 

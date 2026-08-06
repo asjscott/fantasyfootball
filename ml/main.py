@@ -45,7 +45,12 @@ def train(
     record_model_run(
         model_version, season_list, DEFAULT_HYPERPARAMS,
         metrics["model_mae"] or -1, metrics["model_rmse"] or -1,
-        notes=f"baseline_mae={metrics['baseline_mae']}, beats_baseline={metrics['beats_baseline']}",
+        notes=(
+            f"baseline_mae={metrics['baseline_mae']}, beats_baseline={metrics['beats_baseline']}, "
+            f"model_played_mae={metrics['model_played_mae']}, model_unplayed_mae={metrics['model_unplayed_mae']}, "
+            f"baseline_played_mae={metrics['baseline_played_mae']}, "
+            f"beats_baseline_played={metrics['beats_baseline_played']}"
+        ),
     )
     typer.echo(f"Trained {model_version}: {metrics}")
 
@@ -79,7 +84,12 @@ def train_and_predict(
     record_model_run(
         model_version, season_list, DEFAULT_HYPERPARAMS,
         metrics["model_mae"] or -1, metrics["model_rmse"] or -1,
-        notes=f"baseline_mae={metrics['baseline_mae']}, beats_baseline={metrics['beats_baseline']}",
+        notes=(
+            f"baseline_mae={metrics['baseline_mae']}, beats_baseline={metrics['beats_baseline']}, "
+            f"model_played_mae={metrics['model_played_mae']}, model_unplayed_mae={metrics['model_unplayed_mae']}, "
+            f"baseline_played_mae={metrics['baseline_played_mae']}, "
+            f"beats_baseline_played={metrics['beats_baseline_played']}"
+        ),
     )
     typer.echo(f"Trained {model_version}: {metrics}")
 
@@ -100,10 +110,23 @@ def backtest(
     typer.echo(f"Backtesting {target_season} against training seasons {training_seasons}...")
     summary = backtest_season(target_season, training_seasons.split(","))
     for row in summary:
-        typer.echo(f"  GW{row['gameweek']:02d}: {row['players']} players, MAE={row['mae']:.3f}")
+        played_str = f"{row['played_mae']:.3f}" if row["played_mae"] is not None else "n/a"
+        typer.echo(
+            f"  GW{row['gameweek']:02d}: {row['players']} players, MAE={row['mae']:.3f} "
+            f"(played MAE={played_str}, n={row['played_players']}; unplayed n={row['unplayed_players']})"
+        )
     if summary:
         overall_mae = sum(r["mae"] * r["players"] for r in summary) / sum(r["players"] for r in summary)
         typer.echo(f"Backtest complete: {len(summary)} gameweeks, player-weighted MAE={overall_mae:.3f}")
+
+        played_rows_total = sum(r["played_players"] for r in summary if r["played_mae"] is not None)
+        if played_rows_total:
+            overall_played_mae = sum(
+                r["played_mae"] * r["played_players"] for r in summary if r["played_mae"] is not None
+            ) / played_rows_total
+            typer.echo(
+                f"  Played-only player-weighted MAE={overall_played_mae:.3f} ({played_rows_total} played rows)"
+            )
 
 
 if __name__ == "__main__":
