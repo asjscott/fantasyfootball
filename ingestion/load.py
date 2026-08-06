@@ -160,6 +160,12 @@ def load_live_snapshot(season: str = CURRENT_SEASON) -> int:
     FPL API. Does not touch historical seasons. Safe to run repeatedly —
     every write is an upsert, and player_current_status is append-only so
     each run adds one more snapshot row per player rather than overwriting.
+
+    Does NOT yet pull completed-gameweek results (player_gameweek_stats).
+    fetch.fetch_event_live exists for this but isn't wired in — deliberately
+    deferred until a real gameweek has been played, so the FPL API's
+    stats-object shape can be verified against a real response instead of
+    guessed (see the "KNOWN GAP" note in ingestion/README.md).
     """
     started_at = datetime.now(timezone.utc)
     rows_loaded = 0

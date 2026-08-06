@@ -69,9 +69,9 @@ def load_upcoming_fixtures(season: str, gameweek: int) -> pd.DataFrame:
         )
 
 
-_PREDICT_CONTEXT_QUERY = """
+_PREDICT_FIXTURE_CONTEXT_QUERY = """
     SELECT
-        ps.player_id, %(season)s::text AS season, %(gameweek)s::int AS gameweek, ps.position,
+        ps.player_id, %(season)s::text AS season, f.gameweek, f.id AS fixture_id, ps.position,
         (f.home_team_id = ps.team_id) AS was_home,
         pcs.now_cost AS value, pcs.chance_of_playing_this_round,
         own.strength_attack_home, own.strength_attack_away,
@@ -83,7 +83,7 @@ _PREDICT_CONTEXT_QUERY = """
         f.home_difficulty, f.away_difficulty
     FROM player_seasons ps
     JOIN fixtures f
-        ON f.season = %(season)s AND f.gameweek = %(gameweek)s
+        ON f.season = %(season)s AND f.gameweek BETWEEN %(start_gameweek)s AND %(end_gameweek)s
         AND (f.home_team_id = ps.team_id OR f.away_team_id = ps.team_id)
     JOIN team_seasons own ON own.id = ps.team_id
     JOIN team_seasons opp
@@ -98,31 +98,39 @@ _PREDICT_CONTEXT_QUERY = """
 """
 
 
-def load_predict_context(season: str, gameweek: int) -> pd.DataFrame:
-    """One row per player with a fixture in `gameweek`, carrying the same
-    shape as `load_training_frame` (minus the unknown target) so it can be
-    concatenated with history before feature engineering.
+def load_predict_fixture_context(season: str, start_gameweek: int, end_gameweek: int) -> pd.DataFrame:
+    """One row per (player, fixture) for every fixture in
+    [start_gameweek, end_gameweek] — a plain join against every matching
+    fixture, so a blank gameweek naturally contributes zero rows for that
+    player and a double gameweek naturally contributes two, with no
+    special-casing needed for either.
     """
     with get_connection() as conn:
         return pd.read_sql(
-            _PREDICT_CONTEXT_QUERY, conn, params={"season": season, "gameweek": gameweek}
+            _PREDICT_FIXTURE_CONTEXT_QUERY, conn,
+            params={"season": season, "start_gameweek": start_gameweek, "end_gameweek": end_gameweek},
         )
 
 
 def write_predictions(rows: list[dict], model_version: str) -> None:
+    """Each row needs player_id/season/gameweek/predicted_points; confidence
+    is optional (defaults to NULL) so this still works for any future caller
+    that hasn't computed one.
+    """
     with get_connection() as conn:
         cur = conn.cursor()
         for row in rows:
             cur.execute(
                 """
-                INSERT INTO predictions (player_id, season, gameweek, predicted_points, model_version)
-                VALUES (%(player_id)s, %(season)s, %(gameweek)s, %(predicted_points)s, %(model_version)s)
+                INSERT INTO predictions (player_id, season, gameweek, predicted_points, confidence, model_version)
+                VALUES (%(player_id)s, %(season)s, %(gameweek)s, %(predicted_points)s, %(confidence)s, %(model_version)s)
                 ON CONFLICT (player_id, season, gameweek) DO UPDATE SET
                     predicted_points = EXCLUDED.predicted_points,
+                    confidence = EXCLUDED.confidence,
                     model_version = EXCLUDED.model_version,
                     predicted_at = now()
                 """,
-                {**row, "model_version": model_version},
+                {"confidence": None, **row, "model_version": model_version},
             )
 
 

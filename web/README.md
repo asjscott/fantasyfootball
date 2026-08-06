@@ -30,6 +30,18 @@ Next.js 16 introduced a new caching model ("Cache Components", opt-in via `cache
 
 `PredictionsTable` (`components/PredictionsTable.tsx`) shows two extra columns — "Actual points" and "Difference" — but only when the data actually has them: `hasActuals = predictions.some(p => p.actual_points !== null)`. For a future gameweek (nothing played yet), `actual_points` is `null` for every row and the table just shows predictions, same as before this feature existed. For a backtest/historical gameweek (see `ml/README.md`'s backtest section), every row has a real `actual_points` from the API, and the extra columns appear automatically — nothing page-level had to change, since `app/predictions/page.tsx` already lets you pick any `season`/`gameweek` via the filter form, e.g. `/predictions?season=2025-26&gameweek=1`.
 
+## Confidence and the player detail page
+
+`app/players/[id]/page.tsx` was bare until this stage (just the player's name) — now it's the main showcase for multi-gameweek predictions: it fetches the current gameweek, then `getPlayerPredictions(id, season, gameweek, 5)` for that player's next 5 gameweeks, and renders them via `<PlayerPredictionsTable>` (predicted points, a confidence badge, actual points once known).
+
+`<ConfidenceBadge>` (`components/ConfidenceBadge.tsx`) buckets the raw 0-1 `confidence` score into High/Medium/Low with its thresholds (`>= 0.7` / `>= 0.4`) **matching `ml/validate_confidence.py`'s bucketing by convention** — there's no shared code between Python and TypeScript here, so if one changes, the other needs updating by hand; worth checking both if the buckets ever look off. The badge's tooltip spells out what confidence actually means ("playing-time certainty ... NOT points-prediction accuracy") since the label alone doesn't carry that distinction — see `ml/README.md` for why that framing exists (a points-accuracy framing was tried first and failed validation against real data).
+
+`<ConfidenceBadge>` is reused in `PredictionsTable` too — the global predictions list gained a "Confidence" column alongside the existing predicted/actual/difference ones.
+
+## Predicted vs. actual points
+
+`PredictionsTable` (`components/PredictionsTable.tsx`) shows two extra columns — "Actual points" and "Difference" — but only when the data actually has them: `hasActuals = predictions.some(p => p.actual_points !== null)`. For a future gameweek (nothing played yet), `actual_points` is `null` for every row and the table just shows predictions, same as before this feature existed. For a backtest/historical gameweek (see `ml/README.md`'s backtest section), every row has a real `actual_points` from the API, and the extra columns appear automatically — nothing page-level had to change, since `app/predictions/page.tsx` already lets you pick any `season`/`gameweek` via the filter form, e.g. `/predictions?season=2025-26&gameweek=1`.
+
 ## Judgment calls worth knowing about
 
 - **`API_BASE_URL` is a server-only env var** (see `.env.example`) — deliberately *not* prefixed `NEXT_PUBLIC_`, so it's only readable in server-side code and never reaches the browser bundle. This is a direct consequence of every fetch happening in a Server Component; a fully client-rendered app would need the public prefix.
@@ -41,7 +53,7 @@ Next.js 16 introduced a new caching model ("Cache Components", opt-in via `cache
 
 - `lib/api-client.ts` — the one place that talks to the Go API; also where the envelope-narrowing logic lives.
 - `types/api.ts` — hand-written types mirroring the Go API's JSON shapes (not code-generated — the endpoint count doesn't justify an OpenAPI toolchain yet).
-- `components/` — small presentational pieces shared across pages (`PredictionsTable`, `FixturesTable`, `ErrorNotice`, `Nav`). None of them are Client Components.
+- `components/` — small presentational pieces shared across pages (`PredictionsTable`, `PlayerPredictionsTable`, `FixturesTable`, `ConfidenceBadge`, `ErrorNotice`, `Nav`). None of them are Client Components.
 - `app/predictions/page.tsx` — the most fully-featured page (filters via a GET form); good template for any new filtered-list page.
 
 ## Running it

@@ -11,10 +11,73 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const listPlayerPredictions = `-- name: ListPlayerPredictions :many
+SELECT
+    p.season, p.gameweek, p.predicted_points, p.confidence, p.model_version,
+    pgs.total_points AS actual_points
+FROM predictions p
+LEFT JOIN player_gameweek_stats pgs
+    ON pgs.player_id = p.player_id AND pgs.season = p.season AND pgs.gameweek = p.gameweek
+WHERE p.player_id = $1 AND p.season = $2
+    AND p.gameweek BETWEEN $3 AND $4
+ORDER BY p.gameweek
+`
+
+type ListPlayerPredictionsParams struct {
+	PlayerID     int32  `json:"player_id"`
+	Season       string `json:"season"`
+	FromGameweek int32  `json:"from_gameweek"`
+	ToGameweek   int32  `json:"to_gameweek"`
+}
+
+type ListPlayerPredictionsRow struct {
+	Season          string         `json:"season"`
+	Gameweek        int32          `json:"gameweek"`
+	PredictedPoints pgtype.Numeric `json:"predicted_points"`
+	Confidence      pgtype.Numeric `json:"confidence"`
+	ModelVersion    string         `json:"model_version"`
+	ActualPoints    *int32         `json:"actual_points"`
+}
+
+// One player's predictions across a gameweek range — the per-player,
+// multi-gameweek view (predicted points + confidence per upcoming
+// gameweek), same actual_points join as ListPredictions above.
+func (q *Queries) ListPlayerPredictions(ctx context.Context, arg ListPlayerPredictionsParams) ([]ListPlayerPredictionsRow, error) {
+	rows, err := q.db.Query(ctx, listPlayerPredictions,
+		arg.PlayerID,
+		arg.Season,
+		arg.FromGameweek,
+		arg.ToGameweek,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPlayerPredictionsRow
+	for rows.Next() {
+		var i ListPlayerPredictionsRow
+		if err := rows.Scan(
+			&i.Season,
+			&i.Gameweek,
+			&i.PredictedPoints,
+			&i.Confidence,
+			&i.ModelVersion,
+			&i.ActualPoints,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPredictions = `-- name: ListPredictions :many
 SELECT
     p.player_id, pl.web_name, t.name AS team, ps.position,
-    p.season, p.gameweek, p.predicted_points, p.model_version,
+    p.season, p.gameweek, p.predicted_points, p.confidence, p.model_version,
     pgs.total_points AS actual_points
 FROM predictions p
 JOIN players pl ON pl.id = p.player_id
@@ -44,13 +107,15 @@ type ListPredictionsRow struct {
 	Season          string         `json:"season"`
 	Gameweek        int32          `json:"gameweek"`
 	PredictedPoints pgtype.Numeric `json:"predicted_points"`
+	Confidence      pgtype.Numeric `json:"confidence"`
 	ModelVersion    string         `json:"model_version"`
 	ActualPoints    *int32         `json:"actual_points"`
 }
 
 // actual_points is NULL for a gameweek that hasn't been played yet (no
 // matching player_gameweek_stats row); populated for backtest/historical
-// gameweeks so predicted-vs-actual can be compared directly.
+// gameweeks so predicted-vs-actual can be compared directly. confidence is
+// playing-time certainty (0-1), not points-accuracy — see ml/README.md.
 func (q *Queries) ListPredictions(ctx context.Context, arg ListPredictionsParams) ([]ListPredictionsRow, error) {
 	rows, err := q.db.Query(ctx, listPredictions,
 		arg.Season,
@@ -73,6 +138,7 @@ func (q *Queries) ListPredictions(ctx context.Context, arg ListPredictionsParams
 			&i.Season,
 			&i.Gameweek,
 			&i.PredictedPoints,
+			&i.Confidence,
 			&i.ModelVersion,
 			&i.ActualPoints,
 		); err != nil {

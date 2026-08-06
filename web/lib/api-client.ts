@@ -2,6 +2,7 @@ import type {
   CurrentGameweek,
   Fixture,
   Player,
+  PlayerPrediction,
   Prediction,
   Team,
 } from "@/types/api";
@@ -73,6 +74,19 @@ export function getPlayers(): Promise<Player[]> {
 
 export function getPlayer(id: number): Promise<Player> {
   return apiFetch<Player>(`/api/v1/players/${id}`);
+}
+
+export function getPlayerPredictions(
+  id: number,
+  season: string,
+  fromGameweek: number,
+  horizon?: number,
+): Promise<PlayerPrediction[]> {
+  return apiFetch<PlayerPrediction[]>(`/api/v1/players/${id}/predictions`, {
+    season,
+    from_gameweek: fromGameweek,
+    horizon,
+  });
 }
 
 export function getTeams(): Promise<Team[]> {

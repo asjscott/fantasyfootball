@@ -22,6 +22,18 @@ func numericToFloat64(n pgtype.Numeric) float64 {
 	return f.Float64
 }
 
+// Unlike numericToFloat64, this preserves NULL as nil rather than
+// collapsing it to 0 — used for fields where "no confidence computed yet"
+// (older prediction rows) needs to stay distinguishable from "confidence
+// is genuinely zero."
+func numericToFloat64Ptr(n pgtype.Numeric) *float64 {
+	f, err := n.Float64Value()
+	if err != nil || !f.Valid {
+		return nil
+	}
+	return &f.Float64
+}
+
 func timestamptzToTimePtr(t pgtype.Timestamptz) *time.Time {
 	if !t.Valid {
 		return nil
@@ -60,14 +72,18 @@ func toFixtureResponse(row store.ListFixturesRow) FixtureResponse {
 }
 
 type PredictionResponse struct {
-	PlayerID        int32   `json:"player_id"`
-	WebName         *string `json:"web_name"`
-	Team            string  `json:"team"`
-	Position        string  `json:"position"`
-	Season          string  `json:"season"`
-	Gameweek        int32   `json:"gameweek"`
-	PredictedPoints float64 `json:"predicted_points"`
-	ModelVersion    string  `json:"model_version"`
+	PlayerID        int32    `json:"player_id"`
+	WebName         *string  `json:"web_name"`
+	Team            string   `json:"team"`
+	Position        string   `json:"position"`
+	Season          string   `json:"season"`
+	Gameweek        int32    `json:"gameweek"`
+	PredictedPoints float64  `json:"predicted_points"`
+	// Confidence is playing-time certainty (0-1) — how likely this player
+	// is to get real minutes this gameweek, NOT points-prediction accuracy.
+	// See ml/README.md for why that distinction matters.
+	Confidence   *float64 `json:"confidence"`
+	ModelVersion string   `json:"model_version"`
 	// ActualPoints is nil for a gameweek that hasn't been played yet;
 	// populated for backtest/historical gameweeks.
 	ActualPoints *int32 `json:"actual_points"`
@@ -82,6 +98,27 @@ func toPredictionResponse(row store.ListPredictionsRow) PredictionResponse {
 		Season:          row.Season,
 		Gameweek:        row.Gameweek,
 		PredictedPoints: numericToFloat64(row.PredictedPoints),
+		Confidence:      numericToFloat64Ptr(row.Confidence),
+		ModelVersion:    row.ModelVersion,
+		ActualPoints:    row.ActualPoints,
+	}
+}
+
+type PlayerPredictionResponse struct {
+	Season          string   `json:"season"`
+	Gameweek        int32    `json:"gameweek"`
+	PredictedPoints float64  `json:"predicted_points"`
+	Confidence      *float64 `json:"confidence"`
+	ModelVersion    string   `json:"model_version"`
+	ActualPoints    *int32   `json:"actual_points"`
+}
+
+func toPlayerPredictionResponse(row store.ListPlayerPredictionsRow) PlayerPredictionResponse {
+	return PlayerPredictionResponse{
+		Season:          row.Season,
+		Gameweek:        row.Gameweek,
+		PredictedPoints: numericToFloat64(row.PredictedPoints),
+		Confidence:      numericToFloat64Ptr(row.Confidence),
 		ModelVersion:    row.ModelVersion,
 		ActualPoints:    row.ActualPoints,
 	}

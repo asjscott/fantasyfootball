@@ -138,6 +138,7 @@ type Prediction struct {
 	PredictedPoints pgtype.Numeric     `json:"predicted_points"`
 	ModelVersion    string             `json:"model_version"`
 	PredictedAt     pgtype.Timestamptz `json:"predicted_at"`
+	Confidence      pgtype.Numeric     `json:"confidence"`
 }
 
 type Team struct {

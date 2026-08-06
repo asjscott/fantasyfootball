@@ -32,9 +32,22 @@ export type Prediction = {
   season: string;
   gameweek: number;
   predicted_points: number;
+  // Playing-time certainty (0-1), not points-prediction accuracy — see
+  // ml/README.md. Null for older prediction rows written before this
+  // existed.
+  confidence: number | null;
   model_version: string;
   // null until the gameweek has actually been played (historical/backtest
   // gameweeks have it; future ones don't).
+  actual_points: number | null;
+};
+
+export type PlayerPrediction = {
+  season: string;
+  gameweek: number;
+  predicted_points: number;
+  confidence: number | null;
+  model_version: string;
   actual_points: number | null;
 };
 

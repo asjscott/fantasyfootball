@@ -18,6 +18,7 @@ func (h *Handlers) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", h.handleHealthz)
 	mux.HandleFunc("GET /api/v1/players", h.handleListPlayers)
 	mux.HandleFunc("GET /api/v1/players/{id}", h.handleGetPlayer)
+	mux.HandleFunc("GET /api/v1/players/{id}/predictions", h.handleListPlayerPredictions)
 	mux.HandleFunc("GET /api/v1/teams", h.handleListTeams)
 	mux.HandleFunc("GET /api/v1/fixtures", h.handleListFixtures)
 	mux.HandleFunc("GET /api/v1/predictions", h.handleListPredictions)
@@ -55,6 +56,53 @@ func (h *Handlers) handleGetPlayer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	WriteData(w, http.StatusOK, player, nil)
+}
+
+func (h *Handlers) handleListPlayerPredictions(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "invalid_id", "id must be an integer")
+		return
+	}
+
+	query := r.URL.Query()
+	season := query.Get("season")
+	if season == "" {
+		WriteError(w, http.StatusBadRequest, "missing_param", "season is required")
+		return
+	}
+
+	fromGameweek, err := strconv.Atoi(query.Get("from_gameweek"))
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, "missing_param", "from_gameweek is required and must be an integer")
+		return
+	}
+
+	horizon := 5
+	if raw := query.Get("horizon"); raw != "" {
+		horizon, err = strconv.Atoi(raw)
+		if err != nil || horizon < 1 {
+			WriteError(w, http.StatusBadRequest, "invalid_param", "horizon must be a positive integer")
+			return
+		}
+	}
+
+	rows, err := h.Queries.ListPlayerPredictions(r.Context(), store.ListPlayerPredictionsParams{
+		PlayerID:     int32(id),
+		Season:       season,
+		FromGameweek: int32(fromGameweek),
+		ToGameweek:   int32(fromGameweek + horizon - 1),
+	})
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		return
+	}
+
+	predictions := make([]PlayerPredictionResponse, len(rows))
+	for i, row := range rows {
+		predictions[i] = toPlayerPredictionResponse(row)
+	}
+	WriteData(w, http.StatusOK, predictions, map[string]any{"total": len(predictions)})
 }
 
 func (h *Handlers) handleListTeams(w http.ResponseWriter, r *http.Request) {

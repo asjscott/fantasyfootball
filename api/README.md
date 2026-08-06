@@ -29,6 +29,12 @@ This still uses `pgx` underneath (sqlc is a code-generation layer, not a differe
 
 `GET /api/v1/predictions` returns an `actual_points` field alongside `predicted_points` (`sqlc/queries/predictions.sql`) — a `LEFT JOIN` to `player_gameweek_stats` on `(player_id, season, gameweek)`. It's `null` for a gameweek that hasn't been played yet (no matching row exists to join against) and populated for any gameweek that has real results — which today means every backtest gameweek from `ml/backtest.py`'s 2025-26 replay. No new column was added to `predictions` itself for this — the actual result already lives in `player_gameweek_stats` from ingestion, so the join reuses it rather than duplicating it.
 
+## Confidence and multi-gameweek predictions
+
+`predictions` gained a real column for this (`db/migrations/00002_add_prediction_confidence.sql`) — `confidence NUMERIC`, nullable so older rows written before it existed don't need backfilling. It's **playing-time certainty, not points-prediction accuracy** — see `ml/README.md` for why that distinction exists (the accuracy framing was tried first and empirically failed against real backtest data). Both `ListPredictions` and the new `ListPlayerPredictions` return it as `*float64` (`numericToFloat64Ptr` in `convert.go`, distinct from `numericToFloat64` — this one preserves `NULL` as `nil` instead of collapsing it to `0`, since "no confidence computed yet" and "confidence is genuinely zero" are different things a caller shouldn't confuse).
+
+`GET /api/v1/players/{id}/predictions?season=&from_gameweek=&horizon=` is new — one player's predictions across a gameweek range (`horizon` defaults to 5), same `actual_points` join as the list endpoint. This is what powers the enriched player detail page (`web/README.md`) — `predictions`' schema didn't need to change to support a multi-gameweek horizon (still one row per `(player, season, gameweek)`), just a query that reads a range instead of one gameweek.
+
 ## The `{data, error, meta}` envelope
 
 Every endpoint responds with the same shape (`internal/api/response.go`): `data` holds the payload (or `null` on error), `error` is `null` on success or `{code, message}` on failure, `meta` carries extras like `{"total": N}`. One shared `WriteData`/`WriteError` pair of functions is used by every handler, so this can't drift per-endpoint. `/healthz` is the one deliberate exception — it returns a plain `200 ok` text body, since it's a liveness check, not API data.
@@ -44,6 +50,7 @@ Every endpoint responds with the same shape (`internal/api/response.go`): `data`
 - `api/sqlc/queries/*.sql` — the actual SQL for every endpoint; usually the fastest way to understand what an endpoint returns and how it filters.
 - `api/internal/api/handlers.go` — request parsing/validation and the route table (`Register`).
 - `api/internal/api/response.go` — the envelope helper.
+- `api/internal/api/convert.go` — `numericToFloat64` vs `numericToFloat64Ptr`: read the comment on the latter before reusing either for a new nullable field.
 - `api/internal/store/` — generated code; read it to see exact Go types, but never hand-edit it (it says `DO NOT EDIT` at the top of every file for a reason — edits get silently overwritten by the next `sqlc generate`).
 
 ## Running it

@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { ConfidenceBadge } from "@/components/ConfidenceBadge";
 import type { Prediction } from "@/types/api";
 
 export function PredictionsTable({ predictions }: { predictions: Prediction[] }) {
@@ -17,6 +18,7 @@ export function PredictionsTable({ predictions }: { predictions: Prediction[] })
           <th className="py-2 pr-4">Team</th>
           <th className="py-2 pr-4">Position</th>
           <th className="py-2 pr-4 text-right">Predicted points</th>
+          <th className="py-2 pr-4">Confidence</th>
           {hasActuals && <th className="py-2 pr-4 text-right">Actual points</th>}
           {hasActuals && <th className="py-2 pr-4 text-right">Difference</th>}
         </tr>
@@ -38,6 +40,9 @@ export function PredictionsTable({ predictions }: { predictions: Prediction[] })
               <td className="py-2 pr-4">{prediction.team}</td>
               <td className="py-2 pr-4">{prediction.position}</td>
               <td className="py-2 pr-4 text-right">{prediction.predicted_points.toFixed(1)}</td>
+              <td className="py-2 pr-4">
+                <ConfidenceBadge confidence={prediction.confidence} />
+              </td>
               {hasActuals && (
                 <td className="py-2 pr-4 text-right">
                   {prediction.actual_points === null ? "—" : prediction.actual_points}
